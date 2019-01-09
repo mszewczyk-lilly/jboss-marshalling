@@ -18,6 +18,8 @@
 
 package org.jboss.marshalling.river;
 
+import static org.jboss.marshalling.river.Protocol.*;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.InvalidClassException;
@@ -27,27 +29,29 @@ import java.io.ObjectOutput;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
-import java.security.PrivilegedAction;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.IdentityHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.AbstractCollection;
 import java.util.AbstractList;
 import java.util.AbstractQueue;
 import java.util.AbstractSequentialList;
 import java.util.AbstractSet;
-import java.util.Vector;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.Stack;
+import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
+
 import org.jboss.marshalling.AbstractMarshaller;
 import org.jboss.marshalling.ByteOutput;
 import org.jboss.marshalling.ClassExternalizerFactory;
@@ -57,15 +61,13 @@ import org.jboss.marshalling.MarshallingConfiguration;
 import org.jboss.marshalling.ObjectResolver;
 import org.jboss.marshalling.ObjectTable;
 import org.jboss.marshalling.Pair;
-import org.jboss.marshalling.UTFUtils;
 import org.jboss.marshalling.TraceInformation;
+import org.jboss.marshalling.UTFUtils;
 import org.jboss.marshalling.reflect.SerializableClass;
 import org.jboss.marshalling.reflect.SerializableClassRegistry;
 import org.jboss.marshalling.reflect.SerializableField;
 import org.jboss.marshalling.util.IdentityIntMap;
 import org.jboss.marshalling.util.Kind;
-
-import static org.jboss.marshalling.river.Protocol.*;
 
 /**
  *
@@ -760,7 +762,24 @@ public class RiverMarshaller extends AbstractMarshaller {
                     return;
                 }
                 case -1: break;
-                default: throw new NotSerializableException(objClass.getName());
+                default: 
+                  System.out.println("Raising NotSerializableException on original object " + objClass.getName() + ": " + obj.toString());
+                  try {
+                    if (objClass.getName().equals("java.util.ArrayList$Itr")) {
+                      Field cursorField = obj.getClass().getDeclaredField("cursor");
+                      cursorField.setAccessible(true);
+                      cursorField.set(obj, 0);
+                      Iterator iteratorObj = (Iterator)obj;
+                      while (iteratorObj.hasNext()) {
+                        Object listItem = iteratorObj.next();
+                        System.out.println(listItem.toString());
+                      }
+                    }
+                  } catch (Exception e) {
+                    System.out.println("Tried to iterate through the list, but there was an exception.");
+                    e.printStackTrace();
+                  }
+                  throw new NotSerializableException(objClass.getName());
             }
             if (isArray) {
                 final Object[] objects = (Object[]) obj;
@@ -856,6 +875,22 @@ public class RiverMarshaller extends AbstractMarshaller {
                     instanceCache.put(obj, -1);
                 }
                 return;
+            }
+            System.out.println("Raising NotSerializableException on original object " + objClass.getName() + ": " + obj.toString());
+            try {
+              if (objClass.getName().equals("java.util.ArrayList$Itr")) {
+                Field cursorField = obj.getClass().getDeclaredField("cursor");
+                cursorField.setAccessible(true);
+                cursorField.set(obj, 0);
+                Iterator iteratorObj = (Iterator)obj;
+                while (iteratorObj.hasNext()) {
+                  Object listItem = iteratorObj.next();
+                  System.out.println(listItem.toString());
+                }
+              }
+            } catch (Exception e) {
+              System.out.println("Tried to iterate through the list, but there was an exception.");
+              e.printStackTrace();
             }
             throw new NotSerializableException(objClass.getName());
         } finally {
@@ -1039,6 +1074,51 @@ public class RiverMarshaller extends AbstractMarshaller {
                     throw ioe;
                 }
             } catch (IOException e) {
+                if (e instanceof NotSerializableException) {
+                  try {
+                    System.out.println("RiverMarshaller detected a NotSerializableException while writing fields.");
+                    System.out.println("The object being marshalled is of type " + obj.getClass().getCanonicalName());
+                    System.out.println("The fields are as follows:");
+                    for (SerializableField field : serializableFields) {
+                      System.out.println(field.getName() + " of type " + field.getType().getCanonicalName());
+                      if (field.getType().getCanonicalName().equals("com.cloudbees.groovy.cps.impl.SourceLocation")) {
+                        System.out.println("   SourceLocation detected.");
+                        
+                        Field sourceLocationField = field.getField();
+                        sourceLocationField.setAccessible(true);
+                        Object sourceLocation = sourceLocationField.get(obj);
+                        
+                        Field methodLocationField = sourceLocation.getClass().getDeclaredField("method");
+                        methodLocationField.setAccessible(true);
+                        Object methodLocation = methodLocationField.get(sourceLocation);
+                        
+                        Field lineNumberField = sourceLocation.getClass().getDeclaredField("lineNumber");
+                        lineNumberField.setAccessible(true);
+                        Integer lineNumber = (Integer)lineNumberField.get(sourceLocation);
+                        
+                        Field declaringClassField = methodLocation.getClass().getDeclaredField("declaringClass");
+                        declaringClassField.setAccessible(true);
+                        String declaringClass = (String)declaringClassField.get(methodLocation);
+                        
+                        Field methodNameField = methodLocation.getClass().getDeclaredField("methodName");
+                        methodNameField.setAccessible(true);
+                        String methodName = (String)methodNameField.get(methodLocation);
+                        
+                        Field fileNameField = methodLocation.getClass().getDeclaredField("fileName");
+                        fileNameField.setAccessible(true);
+                        String fileName = (String)fileNameField.get(methodLocation);
+                        
+                        System.out.println("     File name: " + fileName);
+                        System.out.println("     Declaring class: " + declaringClass);
+                        System.out.println("     Method name: " + methodName);
+                        System.out.println("     Line number: " + lineNumber);
+                      }
+                    }
+                  } catch (Exception ex) {
+                    System.out.println("Exception occurred while trying to print the fields.");
+                    ex.printStackTrace();
+                  }
+                }
                 TraceInformation.addFieldInformation(e, info, serializableField);
                 TraceInformation.addObjectInformation(e, obj);
                 throw e;

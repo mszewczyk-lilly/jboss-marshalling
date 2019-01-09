@@ -4,3 +4,6 @@ dependency-reduced-pom.xml
 *.ipr
 *.iml
 /.idea
+**/.project
+**/.classpath
+**/.settings

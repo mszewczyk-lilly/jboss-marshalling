@@ -18,27 +18,29 @@
 
 package org.jboss.marshalling.reflect;
 
-import java.io.ObjectInput;
-import java.io.Serializable;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Field;
-import java.io.ObjectOutputStream;
-import java.io.ObjectInputStream;
 import java.io.IOException;
+import java.io.NotSerializableException;
+import java.io.ObjectInput;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.ObjectStreamException;
 import java.io.ObjectStreamField;
-import java.io.ObjectStreamClass;
+import java.io.Serializable;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
+
 import sun.reflect.ReflectionFactory;
 
 /**
@@ -273,7 +275,12 @@ public final class SerializableClass {
             writeObject.invoke(object, outputStream);
         } catch (InvocationTargetException e) {
             final Throwable te = e.getTargetException();
-            if (te instanceof IOException) {
+            if (te instanceof NotSerializableException) {
+              System.out.println("SerializableClass sees an exception for a object of type " + object.getClass().getCanonicalName());
+              System.out.println("When SerializableClass tries to print out the object, this is what it gets:");
+              System.out.println(object.toString());
+              throw (IOException)te;
+            } else if (te instanceof IOException) {
                 throw (IOException)te;
             } else if (te instanceof RuntimeException) {
                 throw (RuntimeException)te;
